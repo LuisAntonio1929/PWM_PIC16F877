@@ -19,9 +19,9 @@ Este proyecto genera una señal PWM controlada por la lectura de voltaje de un p
 
 - Timer 1
 - Timer 2
+- CCP1
 - CCP2
-- Comparador Analógico
-- Conversor Analógico
+- Conversor ADC
 
 ## Cálculos previos
 
