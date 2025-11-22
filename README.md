@@ -12,7 +12,7 @@ Este proyecto genera una señal PWM controlada por la lectura de voltaje de un p
 ## Especificaciones de Hardware
 
 - Frecuencia de oscilacion: 4MHz
-- 8 bits para la conversion ADC
+- 8 bits para la conversion ADC (se usan los 8 bits justificados a la izquierda ubicados en ADRESH en lugar de los 10 bits del ADC)
 - Reloj de oscilacion externo
 
 ## Modulos empleados
@@ -27,43 +27,49 @@ Este proyecto genera una señal PWM controlada por la lectura de voltaje de un p
 
 ### Cálculo del CCP2
 
-Cargar CCPR2 para lanzar una conversión analógica cada 100ms.
+Se emplea el CCP2 para lanzar una conversión ADC cada 100ms, ya que según el datasheet este es el único módulo CCP que puede lanzar evento de conversión.
 
 $$
-T = \frac{4\cdot PRESCALER\cdot CCPR2}{F_{osc}}
+T = \frac{4\cdot TMR1\_prescaler\cdot CCPR2}{F_{osc}}
 $$
 
-Dado que se emplea un prescaler de 1:16, un reloj interno de 8MHz, se llega a que el valor de CCPR2 es 50000.
+Dado que se emplea un prescaler en el TMR1 de 1:8, un reloj externo de 4MHz, se llega a que el valor de CCPR2 es 12500.
 
-### Cálculo del TMR2
+### Cálculo del CCP1
 
-TMR2 debe llegar a hacer match con PR2 en un tiempo de 27.776ms repitiendose esto 18 veces para llegar a 499.968ms (muy cercano a los 500ms de duracion del encendido y apagado durante el parpadeo).
+Para llegar a una señal PWM de frecuencia 100KHz, y empleando el TMR2 con prescaler 1:1, se emplea la siguiente fórmula:
 
 $$
-T = \frac{4\cdot PRESCALER \cdot POSTCALER \cdot (PR2+1)}{F_{osc}}
+PWM_T = \frac{4\cdot TMR2\_prescaler\cdot (PR2+1)}{F_{osc}}
 $$
 
-Trabajando con un prescaler y postcaler de 1:16 ambos, se llega a que el valor de PR2 es de 216.
+Donde se obtiene el valor de PR2 es de 9.
+
+Para el control del DutyCycle (DC) se hace a partir de:
+
+$$
+PWM_{DC} = \frac{TMR2\_prescaler\cdot (CCP1:CCP1CON[5:4])}{F_{osc}}
+$$
+
+Sabiendo que el DC máximo que se puede llegar (al 100%) es cuando $$PWM_{DC} = PWM_T$$. Esto nos lleva a que el máximo valor de CCP1:CCP1CON[5:4] es 40.
+Entonces CCP1:CCP1CON[5:4] solo puede tomar valores de 0 a 40, por lo que se lo vincula con la conversión ADC con la siguiente ecuación:
+
+$$
+CCP1:CCP1CON[5:4] = \frac{ADRESH \cdot 40}{256}
+$$
+
+La razón por la cual se divide entre 256 y no por 1023 como debería ser es porque se están empleando los 8 primeros bits del registro de conversión ADRES de 10 bits justificados a la izquierda. Esto hace que el número obtenido en ADRESH sea el valor de la conversión ADC dividido entre 4, y $$4\cdot256=1024\approx1023$$; lo cual hace que la fórmula anterior sea válida.
 
 ### Cálculo del voltaje
 
-Sabiendo que el valor de 0v corresponde al valor digital de 0, y que 5v corresponde a 1023, se procede a aplicar la siguiente formula para obtener un voltaje en unidades de centivoltios:
+Aplicando la mísma lógica anterior, y sabiendo que el valor del voltaje se encuentra comprendido entre 0 y 5, se procede a aplicar la siguiente formula para obtener un voltaje en unidades de decivoltios:
 
 $$
-V = ADRES\frac{500}{1023}
+V = ADRES\frac{50}{256}
 $$
 
-Sin embjargo, en C esto consume mucha memoria, por lo que aplicando desplazamiento en bits se llega a:
+### Cálculo del DutyCycle
 
-$$
-V = (ADRES>>1)-(ADRES>>6)+(ADRES>>8)
-$$
-
-Para la conversión se seleccionó una frecuencia de Fosc/16. Debido a que según el datasheet el $T_{AD}$ debe de ser de almenos 1.6us. Y al usarse un reloj interno de 8MHz se obtiene:
-
-$$
-T_{AD}= \frac{16}{F_{OSC}}=2us
-$$
 
 ---
 ## Pseudocódigo
@@ -71,93 +77,84 @@ $$
 ### Configuración
 ```text
 //Configuración de los fusibles
-Oscilador interno
+Oscilador externo de 4MHz
 WDT desactivado
 Brownout desactivado
-ADC de 10 bits
-Reloj de 8MHz
 
 //Variables globales
-cont1 y cont2 (enteros)
-cont1 ← 0
-cont2 ← 0
+modo (entero)
+modo ← 0
 
 //Configuracion de pines
-PORTD salida (Pines del LCD)
-B0 entrada
-B2 y B3 salidas
+Definición de los pines del LCD
+RB0 y RA0 entradas
+RB2, RB3 y RC2 salidas
 B2 ← 0
 B3 ← 0
-A0 y A3 entradas analogicas
+A0 entrada analogica
 
 //Configuracion del conversor analógic0
-Datos justificados a la derecha
+Datos justificados a la izquierda para usar solo 8 bits de resolución
 A0 como canal analogico
-Frecuencia de conversion analógica Fos/16
+Frecuencia de conversion analógica Fos/8
 Encender módulo analógico
 
-//Configuración del comparador analógico
-A0 entrada inversora del opamp
-A3 entrada noinversora del opamp
-C1 //Bit del registro que es 1 si A0 < A3 y es 0 si A0 > A3
 //Configuracion CCP2
 Modo comparacion con reseteo del TMR1 y evento ADC
-CCPR2 ← 50000
+CCPR2 ← 12500
+
+//Configuracion CCP1
+Modo PWM
 
 //Configuracion del TMR1
-Prescaler 1:4
+Prescaler 1:8
 Fuente de reloj interna
 Encender TMR1
 
 //Configuracion del TMR2
-Prescaler 1:16
-Postcaler 1:16
-PR2 ← 216
+Prescaler 1:1
+PR2 ← 9
 
 //Configuracion de las interrupciones
 Habilitar interrupciones globales
-Habilitar interrupciones por perifericos
-Habilitar interrupcion por TMR2
+Habilitar interrupciones por interrupción externa en RB0
 ```
 ### Programa principal
 
 ```text
 Inicializar LCD
-si(C1)	//Bit del registro del comparador analogico que es 1 si A0 < A3 y es 0 si A0 > A3
-	Escribir: "Aumentar tension"
-	B3 ← 0
-sino
-	Escribir: "Bajar tension"
-	B3 ← 1
 while(1)
-	si(B0==0)
-		B2 ← ~B2
-		Encender TMR2
-	si(Flag ADC)
-		Limpiar Flag ADC
-		v = ADRES*5/1023
-		Escribir: "Tension: {v} V"
-	si(Flag comparador)	//Hay un flag cada vez que la salida del opamp tiene un cambio
-		Limpiar flag comparador
-		si(C1)
-			Escribir: "Aumentar tension"
-			B3 ← 0
-		sino
-			Escribir: "Bajar tension"
-			B3 ← 1
+	si(¿flag ADC esta en 1?):
+		limpiar flag ADC
+		v ← ADRESH*50/256 			//Cálculo de decivoltios para display
+		si(modo==0):
+			RB3 ← 1
+			Escribir en la primera línea de la LCD: "Modo Lineal"
+			dc ← ADRESH*40/256		//Cálculo del dutycycle
+			CCP1:CCP1CON[5:4] ← dc
+			dc100 ← ADRESH*100/256	//Cálculo del dutycycle en 100% para display
+		sino:
+			RB3 ← 0
+			Escribir en la primera línea de la LCD: "Modo Centrado"
+			diferencia ← 0
+			si(ADRESH>=128):		//128 es el valor digital para 2.5v
+				RB2 ← 1
+				diferencia ← ADRESH-128
+			sino:
+				RB2 ← 0
+				diferencia ← 128-ADRESH
+			dc ← diferencia*40/128		// la ecuación es DC = abs(ADRESH-128)*(40-0)/(256-128)
+			CCP1:CCP1CON[5:4] ← dc
+			dc100 ← diferencia*100/128	// la ecuación es DC% = abs(ADRESH-128)*(100-0)/(256-128)
+		Escribir en la segunda línea de la LCD: "Voltaje: %v DutyCyle: %dc100"
 ```
 
-### Interrupción por TMR2
+### Interrupción externa
 
 ```text
-cont1 ← cont1 + 1
-si(cont1 es 18)
-	cont1 ← 0
-	cont2 ← cont2 + 1
-	B2 ← ~B2
-	si(cont2 es 5)
-		cont2 ← 0
-		Apagar TMR2
+esperar 20ms
+si(RB0 esta precionado)
+	modo ← modo + 1
 ```
 
 ---
