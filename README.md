@@ -30,7 +30,7 @@ Este proyecto genera una señal PWM controlada por la lectura de voltaje de un p
 Se emplea el CCP2 para lanzar una conversión ADC cada 100ms, ya que según el datasheet este es el único módulo CCP que puede lanzar evento de conversión.
 
 $$
-T = \frac{4\cdot TMR1\_prescaler\cdot CCPR2}{F_{osc}}
+T = \frac{4\cdot TMR1prescaler\cdot CCPR2}{F_{osc}}
 $$
 
 Dado que se emplea un prescaler en el TMR1 de 1:8, un reloj externo de 4MHz, se llega a que el valor de CCPR2 es 12500.
@@ -40,7 +40,7 @@ Dado que se emplea un prescaler en el TMR1 de 1:8, un reloj externo de 4MHz, se 
 Para llegar a una señal PWM de frecuencia 100KHz, y empleando el TMR2 con prescaler 1:1, se emplea la siguiente fórmula:
 
 $$
-PWM_T = \frac{4\cdot TMR2\_prescaler\cdot (PR2+1)}{F_{osc}}
+PWM_T = \frac{4\cdot TMR2prescaler\cdot (PR2+1)}{F_{osc}}
 $$
 
 Donde se obtiene el valor de PR2 es de 9.
@@ -48,7 +48,7 @@ Donde se obtiene el valor de PR2 es de 9.
 Para el control del DutyCycle (DC) se hace a partir de:
 
 $$
-PWM_{DC} = \frac{TMR2\_prescaler\cdot (CCP1:CCP1CON[5:4])}{F_{osc}}
+PWM_{DC} = \frac{TMR2prescaler\cdot (CCP1:CCP1CON[5:4])}{F_{osc}}
 $$
 
 Sabiendo que el DC máximo que se puede llegar (al 100%) es cuando $$PWM_{DC} = PWM_T$$. Esto nos lleva a que el máximo valor de CCP1:CCP1CON[5:4] es 40.
